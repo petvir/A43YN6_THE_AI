@@ -1,0 +1,588 @@
+<!DOCTYPE html>
+<html lang="hu">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Tanuló Tic-Tac-Toe</title>
+    <style>
+      body {
+        font-family: "Arial", sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        height: 100vh;
+        margin: 0;
+        background-color: #f0f2f5;
+      }
+
+      .container {
+        text-align: center;
+        background: white;
+        padding: 2rem;
+        border-radius: 10px;
+        box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        max-width: 500px;
+        width: 90%;
+      }
+
+      h1 {
+        color: #333;
+        margin-bottom: 1rem;
+      }
+
+      #status {
+        font-size: 1.2rem;
+        margin-bottom: 1.5rem;
+        color: #666;
+        height: 1.5em;
+      }
+
+      .board {
+        display: grid;
+        grid-template-columns: repeat(3, 100px);
+        grid-template-rows: repeat(3, 100px);
+        gap: 5px;
+        margin: 0 auto;
+        background-color: #333;
+        border: 5px solid #333;
+      }
+
+      .cell {
+        background-color: white;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        font-size: 3rem;
+        font-weight: bold;
+        cursor: pointer;
+        user-select: none;
+        transition: background-color 0.2s;
+      }
+
+      .cell:hover {
+        background-color: #f8f9fa;
+      }
+
+      .cell.x {
+        color: #e74c3c;
+      }
+
+      .cell.o {
+        color: #3498db;
+      }
+
+      button {
+        margin-top: 1.5rem;
+        padding: 10px 20px;
+        font-size: 1rem;
+        background-color: #2ecc71;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+      }
+
+      button:hover {
+        background-color: #27ae60;
+      }
+
+      .reasoning-container {
+        margin-top: 20px;
+        padding: 15px;
+        background-color: #f8f9fa;
+        border-radius: 8px;
+        border: 1px solid #e9ecef;
+        text-align: left;
+        font-size: 0.9rem;
+        max-height: 200px;
+        overflow-y: auto;
+      }
+
+      .reasoning-title {
+        font-weight: bold;
+        margin-bottom: 10px;
+        color: #2c3e50;
+        border-bottom: 2px solid #3498db;
+        padding-bottom: 5px;
+        display: inline-block;
+      }
+
+      .reasoning-item {
+        margin-bottom: 5px;
+        display: flex;
+        justify-content: space-between;
+      }
+
+      .reasoning-highlight {
+        background-color: #e8f4f8;
+        font-weight: bold;
+        color: #2980b9;
+      }
+
+      .q-value-bar {
+        height: 10px;
+        background-color: #3498db;
+        border-radius: 5px;
+        margin-top: 2px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>PETVIR Tic-Tac-Toe</h1>
+      <div style="margin-bottom: 1rem">
+        <label for="algorithm-select">Algoritmus:</label>
+        <select id="algorithm-select" style="padding: 5px; font-size: 1rem">
+          <option value="qlearning">Q-Learning (Tanuló)</option>
+          <option value="minimax">Minimax (Verhetetlen)</option>
+        </select>
+      </div>
+      <div id="status">Betanulás folyamatban...</div>
+      <div class="board" id="board">
+        <div class="cell" data-index="0"></div>
+        <div class="cell" data-index="1"></div>
+        <div class="cell" data-index="2"></div>
+        <div class="cell" data-index="3"></div>
+        <div class="cell" data-index="4"></div>
+        <div class="cell" data-index="5"></div>
+        <div class="cell" data-index="6"></div>
+        <div class="cell" data-index="7"></div>
+        <div class="cell" data-index="8"></div>
+      </div>
+      <div id="ai-reasoning" class="reasoning-container"></div>
+      <button id="restartBtn" style="display: none">Új játék</button>
+    </div>
+    <script>
+      const boardElement = document.getElementById("board");
+      const statusElement = document.getElementById("status");
+      const restartBtn = document.getElementById("restartBtn");
+      const aiReasoningElement = document.getElementById("ai-reasoning");
+      const algorithmSelect = document.getElementById("algorithm-select");
+      const cells = document.querySelectorAll(".cell");
+
+      let board = Array(9).fill(null);
+      let gameActive = false;
+      let currentPlayer = "X"; // Ember: X, Gép: O
+      const HUMAN = "X";
+      const AI = "O";
+
+      // Q-Learning változók
+      let qTable = {};
+      const learningRate = 0.1; // Tanulási ráta - óvatos lassú
+      const discountFactor = 0.9; // Diszkont tényező - nem mohó
+      const explorationRate = 0.2; // Felfedezési ráta - esély véletlenszerű lépésre a tanítás alatt 20% kisérletezés
+      const trainingEpisodes = 20000; // Tanítások száma
+
+      // Játék inicializálása
+      init();
+
+      function init() {
+        statusElement.textContent = "Betanulás folyamatban... Kérlek várj!";
+
+        // setTimeout használata, hogy a felület frissülhessen a tanítás miatti fagyás előtt
+        setTimeout(() => {
+          trainAgent();
+          statusElement.textContent = "A gép készen áll! Te kezdesz (X).";
+          gameActive = true;
+          addEventListeners();
+        }, 100);
+      }
+
+      function addEventListeners() {
+        cells.forEach((cell) => {
+          cell.addEventListener("click", handleCellClick);
+        });
+        restartBtn.addEventListener("click", restartGame);
+        algorithmSelect.addEventListener("change", () => {
+          restartGame();
+          // Ha Minimaxra váltunk, nem kell "Betanulás" szöveg, de ha Q-Learningre, akkor elvileg már be van tanítva
+          if (algorithmSelect.value === "minimax") {
+            statusElement.textContent = "Minimax mód. Te kezdesz (X)!";
+          } else {
+            statusElement.textContent = "Q-Learning mód. Te kezdesz (X)!";
+          }
+        });
+      }
+
+      function handleCellClick(e) {
+        const clickedCell = e.target;
+        const cellIndex = parseInt(clickedCell.getAttribute("data-index"));
+
+        if (
+          board[cellIndex] !== null ||
+          !gameActive ||
+          currentPlayer !== HUMAN
+        ) {
+          return;
+        }
+
+        makeMove(cellIndex, HUMAN);
+
+        if (checkWin(board, HUMAN)) {
+          endGame("Nyertél!");
+          return;
+        } else if (checkDraw(board)) {
+          endGame("Döntetlen!");
+          return;
+        }
+
+        currentPlayer = AI;
+        statusElement.textContent = "A gép gondolkodik...";
+
+        setTimeout(() => {
+          const aiMove = getBestMove(board);
+          console.log("getBestMove", aiMove);
+          makeMove(aiMove, AI);
+
+          if (checkWin(board, AI)) {
+            endGame("A gép nyert!");
+          } else if (checkDraw(board)) {
+            endGame("Döntetlen!");
+          } else {
+            currentPlayer = HUMAN;
+            statusElement.textContent = "Te jössz (X)!";
+          }
+        }, 500);
+      }
+
+      function makeMove(index, player) {
+        console.log("makeMove", index, player, board);
+        board[index] = player;
+        const cell = cells[index];
+        cell.textContent = player;
+        cell.classList.add(player.toLowerCase());
+      }
+
+      function restartGame() {
+        board = Array(9).fill(null);
+        gameActive = true;
+        currentPlayer = HUMAN;
+        statusElement.textContent = "Te jössz (X)!";
+        restartBtn.style.display = "none";
+        aiReasoningElement.innerHTML = ""; // Gondolatmenet törlése
+        cells.forEach((cell) => {
+          cell.textContent = "";
+          cell.classList.remove("x", "o");
+        });
+      }
+
+      function endGame(message) {
+        gameActive = false;
+        statusElement.textContent = message;
+        restartBtn.style.display = "inline-block";
+      }
+
+      // --- MI Logika (Q-Learning) Megerősítéses tanulás
+      function trainAgent() {
+        for (let i = 0; i < trainingEpisodes; i++) {
+          let trainingBoard = Array(9).fill(null);
+          let turn = "X"; // X kezd
+          let history = []; // (állapot, lépés) párok tárolása a Gép (O) számára
+
+          while (true) {
+            // Lehetséges lépések
+            const availableMoves = trainingBoard
+              .map((val, idx) => (val === null ? idx : null))
+              .filter((val) => val !== null);
+            // Ha nincs már lehetséges lépés vége a játéknak
+            if (availableMoves.length === 0) break;
+
+            let move;
+            if (turn === AI) {
+              // Gép köre (O)
+              const state = trainingBoard.toString();
+              if (Math.random() < explorationRate) {
+                move =
+                  availableMoves[
+                    Math.floor(Math.random() * availableMoves.length)
+                  ];
+              } else {
+                move = getBestMoveFromQ(trainingBoard, availableMoves);
+              }
+              history.push({ state: state, move: move });
+            } else {
+              // Véletlenszerű ellenfél (X)
+              move =
+                availableMoves[
+                  Math.floor(Math.random() * availableMoves.length)
+                ];
+            }
+
+            trainingBoard[move] = turn;
+
+            if (checkWin(trainingBoard, turn)) {
+              if (turn === AI) {
+                updateQTable(history, 1); // Gép nyert
+              } else {
+                updateQTable(history, -1); // Gép vesztett
+              }
+              break;
+            } else if (checkDraw(trainingBoard)) {
+              updateQTable(history, 0); // Döntetlen
+              break;
+            }
+
+            turn = turn === "X" ? "O" : "X";
+          }
+        }
+        console.log(
+          "Training complete. Q-table size:",
+          Object.keys(qTable).length
+        );
+      }
+
+      function getBestMoveFromQ(currentBoard, availableMoves) {
+        const state = currentBoard.toString();
+        let bestMove = availableMoves[0];
+        let maxVal = -Infinity;
+
+        availableMoves.forEach((move) => {
+          const key = state + "-" + move;
+          const val = qTable[key] || 0;
+          if (val > maxVal) {
+            maxVal = val;
+            bestMove = move;
+          }
+        });
+        return bestMove;
+      }
+
+      function updateQTable(history, reward) {
+        // Jutalom visszaterjesztése (Backpropagation)
+        for (let i = history.length - 1; i >= 0; i--) {
+          const { state, move } = history[i];
+          const key = state + "-" + move;
+
+          const currentQ = qTable[key] || 0;
+          qTable[key] = currentQ + learningRate * (reward - currentQ);
+
+          reward *= discountFactor; // Jutalom csökkentése a korábbi lépéseknél
+        }
+      }
+
+      function getBestMove(currentBoard) {
+        const algorithm = algorithmSelect.value;
+
+        if (algorithm === "minimax") {
+          return getBestMoveMinimax(currentBoard);
+        } else {
+          return getBestMoveQLearning(currentBoard);
+        }
+      }
+
+      function getBestMoveMinimax(currentBoard) {
+        let bestScore = -Infinity;
+        let move;
+        const availableMoves = currentBoard
+          .map((val, idx) => (val === null ? idx : null))
+          .filter((val) => val !== null);
+        let moveValues = [];
+
+        // Minimax hívása minden lehetséges lépésre
+        for (let i = 0; i < availableMoves.length; i++) {
+          let tempBoard = [...currentBoard];
+          tempBoard[availableMoves[i]] = AI;
+          let score = minimax(tempBoard, 0, false);
+
+          moveValues.push({ move: availableMoves[i], score: score });
+
+          if (score > bestScore) {
+            bestScore = score;
+            move = availableMoves[i];
+          }
+        }
+
+        // Rendezés pontszám szerint csökkenő sorrendbe
+        moveValues.sort((a, b) => b.score - a.score);
+
+        displayDecision({
+          type: "MINIMAX",
+          move: move,
+          score: bestScore,
+          values: moveValues,
+        });
+        return move;
+      }
+
+      const scores = {
+        O: 10,
+        X: -10,
+        TIE: 0,
+      };
+
+      function minimax(board, depth, isMaximizing) {
+        if (checkWin(board, AI)) return scores.O - depth; // Minél hamarabb nyer, annál jobb
+        if (checkWin(board, HUMAN)) return scores.X + depth; // Minél később veszít, annál jobb
+        if (checkDraw(board)) return scores.TIE;
+
+        const availableMoves = board
+          .map((val, idx) => (val === null ? idx : null))
+          .filter((val) => val !== null);
+
+        if (isMaximizing) {
+          let bestScore = -Infinity;
+          for (let i = 0; i < availableMoves.length; i++) {
+            let tempBoard = [...board];
+            tempBoard[availableMoves[i]] = AI;
+            let score = minimax(tempBoard, depth + 1, false);
+            bestScore = Math.max(score, bestScore);
+          }
+          return bestScore;
+        } else {
+          let bestScore = Infinity;
+          for (let i = 0; i < availableMoves.length; i++) {
+            let tempBoard = [...board];
+            tempBoard[availableMoves[i]] = HUMAN;
+            let score = minimax(tempBoard, depth + 1, true);
+            bestScore = Math.min(score, bestScore);
+          }
+          return bestScore;
+        }
+      }
+
+      function getBestMoveQLearning(currentBoard) {
+        const availableMoves = currentBoard
+          .map((val, idx) => (val === null ? idx : null))
+          .filter((val) => val !== null);
+
+        // Azonnali győzelem ellenőrzése (heurisztikus felülbírálat)
+        for (let move of availableMoves) {
+          let tempBoard = [...currentBoard];
+          tempBoard[move] = AI;
+          if (checkWin(tempBoard, AI)) {
+            displayDecision({ type: "WIN_IMMEDIATE", move: move });
+            return move;
+          }
+        }
+
+        // Azonnali blokkolás ellenőrzése
+        for (let move of availableMoves) {
+          let tempBoard = [...currentBoard];
+          tempBoard[move] = HUMAN;
+          if (checkWin(tempBoard, HUMAN)) {
+            displayDecision({ type: "BLOCK_OPPONENT", move: move });
+            return move;
+          }
+        }
+
+        // Kihasználás (Exploitation): legjobb lépés kiválasztása a Q-táblából
+        const state = currentBoard.toString();
+        let bestMove = availableMoves[0];
+        let maxVal = -Infinity;
+        let moveValues = [];
+
+        availableMoves.forEach((move) => {
+          const key = state + "-" + move;
+          const val = qTable[key] || 0;
+          moveValues.push({ move: move, value: val });
+          if (val > maxVal) {
+            maxVal = val;
+            bestMove = move;
+          }
+        });
+
+        // Lépésértékek rendezése a megjelenítéshez
+        moveValues.sort((a, b) => b.value - a.value);
+
+        console.log("getBestMoveQLearning", bestMove, moveValues);
+
+        displayDecision({
+          type: "Q_LEARNING",
+          move: bestMove,
+          values: moveValues,
+        });
+
+        return bestMove;
+      }
+
+      function displayDecision(info) {
+        let html = '<div class="reasoning-title">Gép döntése:</div>';
+
+        if (info.type === "WIN_IMMEDIATE") {
+          html += `<div class="reasoning-item reasoning-highlight">
+                            <span>Azonnali győzelem!</span>
+                            <span>Mező: ${info.move}</span>
+                         </div>`;
+        } else if (info.type === "BLOCK_OPPONENT") {
+          html += `<div class="reasoning-item reasoning-highlight">
+                            <span>Védekezés (Blokk)!</span>
+                            <span>Mező: ${info.move}</span>
+                         </div>`;
+        } else if (info.type === "Q_LEARNING") {
+          html += "<div>Q-tábla értékek (legjobb döntés):</div>";
+          info.values.forEach((item) => {
+            const isSelected = item.move === info.move;
+            const styleClass = isSelected
+              ? "reasoning-item reasoning-highlight"
+              : "reasoning-item";
+            const barWidth = Math.max(0, Math.min(100, (item.value + 1) * 50)); // Normalizálás -1..1-ről kb. 0..100-ra
+
+            let barColor = "#95a5a6"; // Szürke a 0-hoz
+            if (item.value > 0) barColor = "#2ecc71"; // Zöld a pozitívhoz
+            if (item.value < 0) barColor = "#e74c3c"; // Piros a negatívhoz
+
+            html += `<div class="${styleClass}">
+                                <span>Mező ${item.move}:</span>
+                                <span>${item.value.toFixed(4)}</span>
+                             </div>
+                             <div style="width: 100%; background: #eee; height: 4px; margin-bottom: 5px;">
+                                <div style="width: ${barWidth}%; background: ${barColor}; height: 100%;"></div>
+                             </div>`;
+          });
+        } else if (info.type === "MINIMAX") {
+          html += "<div>Minimax számítás (értékek):</div>";
+          info.values.forEach((item) => {
+            const isSelected = item.move === info.move;
+            const styleClass = isSelected
+              ? "reasoning-item reasoning-highlight"
+              : "reasoning-item";
+
+            // Minimax pontok vizualizációja (pl. -10-től 10-ig)
+            // Normalizáljuk kb. 0-100%-ra a megjelenítéshez. A max elméleti pont 10, min -10.
+            // (score + 10) * 5 => 0..100
+            const barWidth = Math.max(0, Math.min(100, (item.score + 10) * 5));
+
+            let barColor = "#95a5a6";
+            if (item.score > 0) barColor = "#2ecc71";
+            if (item.score < 0) barColor = "#e74c3c";
+
+            html += `<div class="${styleClass}">
+                                <span>Mező ${item.move}:</span>
+                                <span>${item.score}</span>
+                             </div>
+                             <div style="width: 100%; background: #eee; height: 4px; margin-bottom: 5px;">
+                                <div style="width: ${barWidth}%; background: ${barColor}; height: 100%;"></div>
+                             </div>`;
+          });
+
+          html += `<div style="font-size: 0.8em; color: #666; margin-top: 5px;">
+                            A Minimax algoritmus minden lehetséges lépést kiértékelt.
+                         </div>`;
+        }
+        aiReasoningElement.innerHTML = html;
+      }
+
+      function checkWin(board, player) {
+        const winConditions = [
+          [0, 1, 2],
+          [3, 4, 5],
+          [6, 7, 8], // Sorok
+          [0, 3, 6],
+          [1, 4, 7],
+          [2, 5, 8], // Oszlopok
+          [0, 4, 8],
+          [2, 4, 6], // Átlók
+        ];
+
+        return winConditions.some((condition) => {
+          return condition.every((index) => board[index] === player);
+        });
+      }
+
+      function checkDraw(board) {
+        return board.every((cell) => cell !== null);
+      }
+    </script>
+  </body>
+</html>
